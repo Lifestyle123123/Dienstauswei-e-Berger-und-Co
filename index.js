@@ -1,81 +1,104 @@
 const express = require("express");
-const axios = require("axios");
+const multer = require("multer");
 const sharp = require("sharp");
+const basicAuth = require("express-basic-auth");
+const path = require("path");
+const fs = require("fs");
 
 const app = express();
+
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"));
+
+const upload = multer({ dest: "uploads/" });
 
 const USER = "Test";
 const PASS = "TestPW";
 
-// Minimal CSS
+// Login
+app.use(basicAuth({
+  users: { [USER]: PASS },
+  challenge: true,
+  unauthorizedResponse: () => "Zugang verweigert."
+}));
+
 const css = `
 body {
-  font-family: sans-serif;
-  background: #eef;
-  display: flex; justify-content: center; align-items: center; height: 100vh;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, #74ABE2, #5563DE);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #fff;
 }
 .container {
-  background: #fff; padding: 20px; border-radius: 8px;
-  box-shadow: 0 0 8px rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.6);
+  padding: 30px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.5);
+  max-width: 400px;
+  width: 90%;
 }
-.error { color: red; margin-top: 10px; }
+input, label {
+  width: 100%;
+  display: block;
+  padding: 10px;
+  margin: 8px 0;
+  border: none;
+  border-radius: 4px;
+}
+button {
+  background: #FFD700;
+  color: #333;
+  padding: 10px;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.error {
+  color: #FFAAAA;
+  margin-top: 10px;
+  text-align: center;
+}
 `;
 
-// Middleware
-function basicAuth(req, res, next) {
-  if (req.headers.authorization) {
-    const auth = Buffer.from(req.headers.authorization.split(" ")[1], "base64").toString().split(":");
-    if (auth[0] === USER && auth[1] === PASS) {
-      return next();
-    }
-  }
-  res.setHeader("WWW-Authenticate", "Basic realm=\"Login\"");
-  res.status(401).send("Authentication required.");
-}
-
-// Login/Startseite
 app.get("/", (req, res) => {
   const msg = req.query.msg ? `<div class="error">${req.query.msg}</div>` : "";
   res.send(`
-<html><head><style>${css}</style><title>Generator</title></head><body>
+<html><head><title>Ausweis Generator</title><style>${css}</style></head><body>
 <div class="container">
 <h2>Dienstausweis Generator</h2>
-<form method="POST" action="/generate">
-  <input name="name" placeholder="Name" required><br>
-  <input name="dienstnummer" placeholder="Dienstnummer" required><br>
-  <input name="rang" placeholder="Rang" required><br>
-  <input name="unterschrift" placeholder="Unterschrift" required><br>
-  <input name="robloxLink" placeholder="Roblox Profil-Link" required><br>
-  <button>Generieren</button>
-</form>
+<p>📷 <b>Anleitung:</b> Gehe auf dein <a href="https://www.roblox.com/" target="_blank" style="color:#FFD700;">Roblox-Profil</a>, mach einen Screenshot von deinem Avatar, oder lade dein Profilbild herunter. Lade das Bild hier hoch:</p>
+<form method="POST" action="/generate" enctype="multipart/form-data">
+<input name="name" placeholder="Name" required>
+<input name="dienstnummer" placeholder="Dienstnummer" required>
+<input name="rang" placeholder="Rang" required>
+<input name="unterschrift" placeholder="Unterschrift" required>
+<label>Avatar Bild: <input type="file" name="avatar" accept="image/*" required></label>
+<button>Generieren</button>
 ${msg}
+</form>
 </div></body></html>
-  `);
+`);
 });
 
-// Roblox ID
-function getRobloxUserId(url) {
-  const match = url.match(/users\/(\d+)\//);
-  return match ? match[1] : null;
-}
-
-// Karte generieren
 async function createCard(data, avatarBuffer) {
   const width = 600, height = 360;
-  const bg = "#fff", navy = "#334", gold = "#fc0";
 
   const svgText = `
-<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-<rect width="100%" height="100%" fill="${bg}"/>
-<rect y="0" width="100%" height="60" fill="${gold}"/>
-<text x="20" y="40" font-size="24" font-family="sans-serif" fill="${navy}">Dienstausweis</text>
-<text x="220" y="100" font-size="16" font-family="sans-serif" fill="${navy}">Name: ${data.name}</text>
-<text x="220" y="130" font-size="16" font-family="sans-serif" fill="${navy}">Dienstnummer: ${data.dienstnummer}</text>
-<text x="220" y="160" font-size="16" font-family="sans-serif" fill="${navy}">Rang: ${data.rang}</text>
-<text x="220" y="190" font-size="16" font-family="sans-serif" fill="${navy}">Unterschrift: ${data.unterschrift}</text>
-</svg>
-`;
+<svg width="${width}" height="${height}">
+<rect width="100%" height="100%" fill="#fff"/>
+<rect y="0" width="100%" height="60" fill="#FFD700"/>
+<text x="20" y="40" font-size="24" font-family="sans-serif" fill="#333">Dienstausweis</text>
+<text x="220" y="100" font-size="16" font-family="sans-serif" fill="#000">Name: ${data.name}</text>
+<text x="220" y="130" font-size="16" font-family="sans-serif" fill="#000">Dienstnummer: ${data.dienstnummer}</text>
+<text x="220" y="160" font-size="16" font-family="sans-serif" fill="#000">Rang: ${data.rang}</text>
+<text x="220" y="190" font-size="16" font-family="sans-serif" fill="#000">Unterschrift: ${data.unterschrift}</text>
+</svg>`;
 
   const circleAvatar = await sharp(avatarBuffer)
     .resize(180, 180)
@@ -84,7 +107,7 @@ async function createCard(data, avatarBuffer) {
     .toBuffer();
 
   const buffer = await sharp({
-    create: { width, height, channels: 4, background: bg }
+    create: { width, height, channels: 4, background: "#fff" }
   })
     .composite([
       { input: Buffer.from(svgText) },
@@ -96,26 +119,27 @@ async function createCard(data, avatarBuffer) {
   return buffer;
 }
 
-app.post("/generate", basicAuth, async (req, res) => {
-  const { name, dienstnummer, rang, unterschrift, robloxLink } = req.body;
-  const userId = getRobloxUserId(robloxLink);
+app.post("/generate", upload.single("avatar"), async (req, res) => {
+  const { name, dienstnummer, rang, unterschrift } = req.body;
+  const avatarPath = req.file?.path;
 
-  if (!userId) {
-    return res.redirect("/?msg=Ungültiger Roblox Link!");
+  if (!avatarPath) {
+    return res.redirect("/?msg=Bitte lade ein Avatar-Bild hoch.");
   }
 
-  const avatarUrl = `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=420&height=420&format=png`;
-
   try {
-    const avatarResp = await axios.get(avatarUrl, { responseType: "arraybuffer" });
-    const ausweisBuffer = await createCard({ name, dienstnummer, rang, unterschrift }, avatarResp.data);
+    const avatar = fs.readFileSync(avatarPath);
+    const ausweis = await createCard({ name, dienstnummer, rang, unterschrift }, avatar);
+
+    // Aufräumen
+    fs.unlinkSync(avatarPath);
 
     res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/\s+/g, "_")}_ausweis.jpg"`);
     res.setHeader("Content-Type", "image/jpeg");
-    res.send(ausweisBuffer);
+    res.send(ausweis);
   } catch (err) {
     console.error(err);
-    res.redirect("/?msg=Fehler: " + encodeURIComponent(err.message));
+    res.redirect(`/?msg=Fehler: ${encodeURIComponent(err.message)}`);
   }
 });
 
