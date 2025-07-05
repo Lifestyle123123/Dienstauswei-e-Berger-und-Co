@@ -1,7 +1,7 @@
 const express = require("express");
 const session = require("express-session");
 const fileUpload = require("express-fileupload");
-const { createCanvas, loadImage } = require("canvas");
+const { createCanvas, loadImage, registerFont } = require("canvas");
 
 const app = express();
 
@@ -147,24 +147,43 @@ app.post("/generate", isAuthenticated, async (req, res) => {
   }
 
   try {
-    const canvas = createCanvas(600, 300);
+    const canvasWidth = 700;
+    const canvasHeight = 400;
+
+    const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext("2d");
 
     // Hintergrund
-    ctx.fillStyle = "#f1f5f9";
-    ctx.fillRect(0, 0, 600, 300);
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // Titelband oben
+    ctx.fillStyle = "#4a5568";
+    ctx.fillRect(0, 0, canvasWidth, 60);
+    ctx.fillStyle = "white";
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("OFFIZIELLER RP AUSWEIS", 20, 40);
 
     // Bild links
     const img = await loadImage(imgFile.data);
-    ctx.drawImage(img, 20, 20, 120, 160);
+    ctx.fillStyle = "#cbd5e0";
+    ctx.fillRect(20, 80, 180, 240);
+    ctx.drawImage(img, 20, 80, 180, 240);
 
-    // Text rechts
-    ctx.fillStyle = "#000";
-    ctx.font = "20px Inter";
-    ctx.fillText(`RP-Name: ${rpname}`, 160, 50);
-    ctx.fillText(`Dienstnummer: ${dienstnummer}`, 160, 100);
-    ctx.fillText(`Rang: ${rang}`, 160, 150);
-    ctx.fillText(`Unterschrift: ${rpname}`, 160, 200);
+    // Linien & Text rechts
+    ctx.fillStyle = "#2d3748";
+    ctx.font = "20px Arial";
+    ctx.fillText("RP-Name:", 220, 120);
+    ctx.fillText("Dienstnummer:", 220, 180);
+    ctx.fillText("Rang:", 220, 240);
+    ctx.fillText("Unterschrift:", 220, 300);
+
+    ctx.fillStyle = "#1a202c";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText(rpname, 380, 120);
+    ctx.fillText(dienstnummer, 380, 180);
+    ctx.fillText(rang, 380, 240);
+    ctx.fillText(rpname, 380, 300);
 
     const buffer = canvas.toBuffer("image/png");
     res.setHeader(
