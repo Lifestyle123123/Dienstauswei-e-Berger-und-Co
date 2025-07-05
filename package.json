@@ -1,13 +1,16 @@
 {
-  "name": "dienstausweis-generator",
+  "name": "ausweis-generator",
   "version": "1.0.0",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "express-basic-auth": "^1.2.1",
-    "multer": "^1.4.5",
-    "sharp": "^0.33.3"
+    "express-fileupload": "^1.4.0",
+    "express-session": "^1.17.3"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
