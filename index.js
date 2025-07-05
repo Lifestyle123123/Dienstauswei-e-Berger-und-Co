@@ -1,146 +1,141 @@
 const express = require("express");
-const multer = require("multer");
-const sharp = require("sharp");
-const basicAuth = require("express-basic-auth");
+const session = require("express-session");
+const fileUpload = require("express-fileupload");
 const path = require("path");
 const fs = require("fs");
 
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
+app.use(fileUpload());
 app.use(express.static("public"));
 
-const upload = multer({ dest: "uploads/" });
+// Session
+app.use(
+  session({
+    secret: "supersecret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 600000 },
+  })
+);
 
-const USER = "Test";
-const PASS = "TestPW";
+// sicherstellen, dass Upload-Verzeichnis existiert
+const uploadDir = path.join(__dirname, "public/uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
 
-// Login
-app.use(basicAuth({
-  users: { [USER]: PASS },
-  challenge: true,
-  unauthorizedResponse: () => "Zugang verweigert."
-}));
+// helper
+const isAuthenticated = (req, res, next) => {
+  if (req.session.loggedIn) return next();
+  res.redirect("/login");
+};
 
-const css = `
+// HTML-Templates
+const layout = (content) => `
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Ausweis Generator</title>
+<style>
 body {
   font-family: Arial, sans-serif;
-  background: linear-gradient(135deg, #74ABE2, #5563DE);
-  margin: 0;
-  padding: 0;
+  background: #f7f7f7;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   height: 100vh;
-  color: #fff;
+  margin: 0;
 }
 .container {
-  background: rgba(0,0,0,0.6);
-  padding: 30px;
-  border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.5);
-  max-width: 400px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  text-align: center;
+  width: 300px;
+}
+input, button {
+  margin: 10px 0;
+  padding: 8px;
   width: 90%;
 }
-input, label {
-  width: 100%;
-  display: block;
-  padding: 10px;
-  margin: 8px 0;
-  border: none;
-  border-radius: 4px;
-}
-button {
-  background: #FFD700;
-  color: #333;
-  padding: 10px;
-  width: 100%;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.error {
-  color: #FFAAAA;
-  margin-top: 10px;
-  text-align: center;
-}
+.error { color: red; }
+.success { color: green; }
+</style>
+</head>
+<body>
+<div class="container">
+${content}
+</div>
+</body>
+</html>
 `;
 
-app.get("/", (req, res) => {
-  const msg = req.query.msg ? `<div class="error">${req.query.msg}</div>` : "";
-  res.send(`
-<html><head><title>Ausweis Generator</title><style>${css}</style></head><body>
-<div class="container">
-<h2>Dienstausweis Generator</h2>
-<p>📷 <b>Anleitung:</b> Gehe auf dein <a href="https://www.roblox.com/" target="_blank" style="color:#FFD700;">Roblox-Profil</a>, mach einen Screenshot von deinem Avatar, oder lade dein Profilbild herunter. Lade das Bild hier hoch:</p>
-<form method="POST" action="/generate" enctype="multipart/form-data">
-<input name="name" placeholder="Name" required>
-<input name="dienstnummer" placeholder="Dienstnummer" required>
-<input name="rang" placeholder="Rang" required>
-<input name="unterschrift" placeholder="Unterschrift" required>
-<label>Avatar Bild: <input type="file" name="avatar" accept="image/*" required></label>
-<button>Generieren</button>
-${msg}
+const loginPage = (error = "") => layout(`
+<h1>Login</h1>
+<form method="POST" action="/login">
+  <input type="text" name="username" placeholder="Benutzername" required><br>
+  <input type="password" name="password" placeholder="Passwort" required><br>
+  <button type="submit">Einloggen</button>
 </form>
-</div></body></html>
+${error ? `<p class="error">${error}</p>` : ""}
 `);
+
+const generatorPage = (message = "", imageUrl = "") => layout(`
+<h1>Ausweis Generator</h1>
+${message ? `<p class="${imageUrl ? "success" : "error"}">${message}</p>` : ""}
+${imageUrl ? `<img src="${imageUrl}" width="200"><br>` : ""}
+<form method="POST" action="/generate" enctype="multipart/form-data">
+  <input type="file" name="image" accept="image/*" required><br>
+  <button type="submit">Ausweis erstellen</button>
+</form>
+`);
+
+app.get("/", (req, res) => {
+  res.redirect("/login");
 });
 
-async function createCard(data, avatarBuffer) {
-  const width = 600, height = 360;
+app.get("/login", (req, res) => {
+  res.send(loginPage());
+});
 
-  const svgText = `
-<svg width="${width}" height="${height}">
-<rect width="100%" height="100%" fill="#fff"/>
-<rect y="0" width="100%" height="60" fill="#FFD700"/>
-<text x="20" y="40" font-size="24" font-family="sans-serif" fill="#333">Dienstausweis</text>
-<text x="220" y="100" font-size="16" font-family="sans-serif" fill="#000">Name: ${data.name}</text>
-<text x="220" y="130" font-size="16" font-family="sans-serif" fill="#000">Dienstnummer: ${data.dienstnummer}</text>
-<text x="220" y="160" font-size="16" font-family="sans-serif" fill="#000">Rang: ${data.rang}</text>
-<text x="220" y="190" font-size="16" font-family="sans-serif" fill="#000">Unterschrift: ${data.unterschrift}</text>
-</svg>`;
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
 
-  const circleAvatar = await sharp(avatarBuffer)
-    .resize(180, 180)
-    .composite([{ input: Buffer.from(`<svg><circle cx="90" cy="90" r="90"/></svg>`), blend: "dest-in" }])
-    .png()
-    .toBuffer();
-
-  const buffer = await sharp({
-    create: { width, height, channels: 4, background: "#fff" }
-  })
-    .composite([
-      { input: Buffer.from(svgText) },
-      { input: circleAvatar, top: 100, left: 20 }
-    ])
-    .jpeg()
-    .toBuffer();
-
-  return buffer;
-}
-
-app.post("/generate", upload.single("avatar"), async (req, res) => {
-  const { name, dienstnummer, rang, unterschrift } = req.body;
-  const avatarPath = req.file?.path;
-
-  if (!avatarPath) {
-    return res.redirect("/?msg=Bitte lade ein Avatar-Bild hoch.");
-  }
-
-  try {
-    const avatar = fs.readFileSync(avatarPath);
-    const ausweis = await createCard({ name, dienstnummer, rang, unterschrift }, avatar);
-
-    // Aufräumen
-    fs.unlinkSync(avatarPath);
-
-    res.setHeader("Content-Disposition", `attachment; filename="${name.replace(/\s+/g, "_")}_ausweis.jpg"`);
-    res.setHeader("Content-Type", "image/jpeg");
-    res.send(ausweis);
-  } catch (err) {
-    console.error(err);
-    res.redirect(`/?msg=Fehler: ${encodeURIComponent(err.message)}`);
+  if (username === "admin" && password === "passwort") {
+    req.session.loggedIn = true;
+    res.redirect("/generator");
+  } else {
+    res.send(loginPage("Falsche Anmeldedaten."));
   }
 });
 
-module.exports = app;
+app.get("/generator", isAuthenticated, (req, res) => {
+  res.send(generatorPage());
+});
+
+app.post("/generate", isAuthenticated, (req, res) => {
+  if (!req.files || !req.files.image) {
+    return res.send(generatorPage("Bitte lade ein Bild hoch."));
+  }
+
+  const img = req.files.image;
+  const savePath = path.join(uploadDir, Date.now() + "-" + img.name);
+
+  img.mv(savePath, (err) => {
+    if (err) {
+      console.error(err);
+      return res.send(generatorPage("Fehler beim Speichern des Bildes."));
+    }
+
+    const relativePath = "/uploads/" + path.basename(savePath);
+    res.send(generatorPage("Ausweis erfolgreich erstellt!", relativePath));
+  });
+});
+
+// für Vercel:
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`🚀 Server läuft auf http://localhost:${port}`));
