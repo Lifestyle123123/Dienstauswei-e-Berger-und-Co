@@ -1,13 +1,13 @@
 const express = require("express");
 const session = require("express-session");
 const fileUpload = require("express-fileupload");
+const { createCanvas, loadImage } = require("canvas");
 
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 app.use(fileUpload());
 
-// Session
 app.use(
   session({
     secret: "supersecret",
@@ -56,7 +56,7 @@ h1 {
 form {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 10px;
 }
 input[type=text], input[type=password], input[type=file] {
   padding: 10px;
@@ -105,8 +105,11 @@ ${error ? `<div class="message error">${error}</div>` : ""}
 
 const generatorPage = (message = "") => layout(`
 <h1>🪪 Ausweis Generator</h1>
-<p>Lade dein Bild hoch und erhalte deinen Ausweis als Download.</p>
+<p>Fülle die Felder aus und lade dein Bild hoch.</p>
 <form method="POST" action="/generate" enctype="multipart/form-data">
+  <input type="text" name="rpname" placeholder="RP-Name" required>
+  <input type="text" name="dienstnummer" placeholder="Dienstnummer" required>
+  <input type="text" name="rang" placeholder="Rang" required>
   <input type="file" name="image" accept="image/*" required>
   <button type="submit">Ausweis erstellen & herunterladen</button>
 </form>
@@ -123,7 +126,6 @@ app.get("/login", (req, res) => {
 
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
-
   if (username === "admin" && password === "passwort") {
     req.session.loggedIn = true;
     res.redirect("/generator");
@@ -136,20 +138,46 @@ app.get("/generator", isAuthenticated, (req, res) => {
   res.send(generatorPage());
 });
 
-app.post("/generate", isAuthenticated, (req, res) => {
-  if (!req.files || !req.files.image) {
+app.post("/generate", isAuthenticated, async (req, res) => {
+  const { rpname, dienstnummer, rang } = req.body;
+  const imgFile = req.files?.image;
+
+  if (!imgFile) {
     return res.send(generatorPage("⚠️ Bitte lade ein Bild hoch."));
   }
 
-  const img = req.files.image;
+  try {
+    const canvas = createCanvas(600, 300);
+    const ctx = canvas.getContext("2d");
 
-  res.set({
-    "Content-Disposition": `attachment; filename=ausweis-${Date.now()}.png`,
-    "Content-Type": img.mimetype,
-  });
-  res.send(img.data);
+    // Hintergrund
+    ctx.fillStyle = "#f1f5f9";
+    ctx.fillRect(0, 0, 600, 300);
+
+    // Bild links
+    const img = await loadImage(imgFile.data);
+    ctx.drawImage(img, 20, 20, 120, 160);
+
+    // Text rechts
+    ctx.fillStyle = "#000";
+    ctx.font = "20px Inter";
+    ctx.fillText(`RP-Name: ${rpname}`, 160, 50);
+    ctx.fillText(`Dienstnummer: ${dienstnummer}`, 160, 100);
+    ctx.fillText(`Rang: ${rang}`, 160, 150);
+    ctx.fillText(`Unterschrift: ${rpname}`, 160, 200);
+
+    const buffer = canvas.toBuffer("image/png");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=ausweis-${Date.now()}.png`
+    );
+    res.setHeader("Content-Type", "image/png");
+    res.send(buffer);
+  } catch (err) {
+    console.error(err);
+    res.send(generatorPage("❌ Fehler beim Erstellen des Ausweises."));
+  }
 });
 
-// für Vercel:
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`🚀 Server läuft auf http://localhost:${port}`));
